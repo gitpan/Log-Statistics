@@ -1,0 +1,12 @@
+Changes
+lib/Log/Statistics.pm
+Makefile.PL
+MANIFEST
+META.yml
+README
+scripts/logstatsd
+scripts/logstatsd.conf
+scripts/rrdgraph.sh
+t/Log-Statistics.t
+t/pod.t
+t/pod_coverage.t
