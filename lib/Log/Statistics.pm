@@ -2,8 +2,8 @@ package Log::Statistics;
 use warnings;
 use strict;
 
-# $Id: Statistics.pm 27 2006-01-30 00:02:11Z wu $
-our $VERSION = sprintf "0.%03d", q$Revision: 27 $ =~ /(\d+)/g;
+# $Id: Statistics.pm 29 2006-01-30 05:35:28Z wu $
+our $VERSION = sprintf "0.%03d", q$Revision: 29 $ =~ /(\d+)/g;
 
 #
 #_* Libraries
@@ -462,6 +462,21 @@ the overhead of using Date::Manip.
 
 =back
 
+=head1 THRESHOLDS
+
+Thresholds allow monitoring the number of long response times.  For
+example, a given transaction might be expected to be complete within 5
+seconds.  In addition to measuring the average response time of the
+transaction, you may also wish to measure how many transactions are
+not completed within 5 seconds.  You may define any number of
+thresholds, so you could measure those that you consider to be fast
+(under 3 seconds), good (under 5 seconds), slow (over 10 seconds), and
+very slow (over 20 seoncds).
+
+NOTE: If a duration field was not defined, then response times
+thresholds statistics can not be calculated.
+
+
 =head1 DEPENDENCIES
 
 YAML - back end storage for log summary data
@@ -519,6 +534,8 @@ DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
 THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
 
 
 
