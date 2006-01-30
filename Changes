@@ -1,3 +1,6 @@
+0.30  Mon Jan 30, 2006 11:34 am
+    - removing default requirement for perl 5.8.6
+
 0.29  Sun Jan 29, 2006 11:35 pm
     - lots of little documentation tweaks
 
