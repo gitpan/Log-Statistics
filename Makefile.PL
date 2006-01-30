@@ -8,7 +8,8 @@ WriteMakefile(
     PREREQ_PM         => {
         "YAML" => 0,
         "Date::Manip" => 0,
-    }, # e.g., Module::Name => 1.1
+        "Log::Log4perl" => 0.51,
+    },
     ($] >= 5.005 ?     ## Add these new keywords supported since 5.005
       (ABSTRACT_FROM  => 'lib/Log/Statistics.pm', # retrieve abstract from module
        AUTHOR         => 'VVu <VVu@geekfarm.org>') : ()),

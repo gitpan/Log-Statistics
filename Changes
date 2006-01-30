@@ -1,3 +1,7 @@
+0.32  Mon Jan 30, 2006  4:10 pm
+    - added dependency for Log::Log4perl 0.51
+    - old version on a box i was testing on did not support :resurrect
+
 0.30  Mon Jan 30, 2006 11:34 am
     - removing default requirement for perl 5.8.6
 
