@@ -7,8 +7,8 @@ use strict;
 # See POD docs below.
 #
 
-# $Id: logstatsd 29 2006-01-30 05:35:28Z wu $
-our $VERSION = sprintf "0.%03d", q$Revision: 29 $ =~ /(\d+)/g;
+# $Id: logstatsd 36 2006-02-14 08:19:28Z wu $
+our $VERSION = sprintf "0.%03d", q$Revision: 36 $ =~ /(\d+)/g;
 
 #
 #_* Libraries
@@ -34,6 +34,7 @@ BEGIN {
   use vars qw(
               %opt
               $opt_help $opt_debug $opt_verbose
+              @opt_logfiles @opt_servers
               @opt_fields @opt_groups @opt_rrdupdate
               $opt_configfile $opt_section
           );
@@ -41,7 +42,7 @@ BEGIN {
   # values in %opt can be overridden on the command line
   unless (
       GetOptions (
-          '-l|logfile:s'       => \$opt{'logfile'},
+          '-l|logfile:s'       => \@opt_logfiles,
           '-c|conf:s'          => \$opt_configfile,
           '-s|section:s'       => \$opt_section,
           '-d|daemon'          => \$opt{'daemon'},
@@ -50,6 +51,7 @@ BEGIN {
           '-rrd:s'             => \$opt{'rrd'},
           '-rrdupdate:s'       => \@opt_rrdupdate,
           '-r|read:s'          => \$opt{'read'},
+          '-servers:s'         => \@opt_servers,
           '-t|time-regexp:s'   => \$opt{'time_regexp'},
           '-line-regexp:s'     => \$opt{'line_regexp'},
           '-f|field:s'         => \@opt_fields,
@@ -130,9 +132,11 @@ if ( get_config( "line_regexp" ) ) {
     $log->add_line_regexp( get_config( "line_regexp" ) );
 }
 
-for my $entry ( @{ $ini{$opt_section}{'field_list'} } ) {
-    my ( $name, $column ) = split /:/, $entry;
-    $log->register_field( $name, $column );
+if ( $opt_section && $ini{$opt_section}{'field_list'} ) {
+    for my $entry ( @{ $ini{$opt_section}{'field_list'} } ) {
+        my ( $name, $column ) = split /:/, $entry;
+        $log->register_field( $name, $column );
+    }
 }
 
 for my $field_def ( get_fields() ) {
@@ -162,13 +166,13 @@ my $data;
 
 # parse the entire file
 if ( get_config( "full" ) ) {
-    process_full_log( get_config( 'logfile' ) );
+    process_full_log( );
     dump_data();
 }
 
 # go into tail mode to process live incoming log file data
 if ( get_config( "daemon" ) ) {
-    daemonize( get_config( 'logfile' ) );
+    daemonize( get_logfiles() );
 }
 
 #
@@ -182,25 +186,53 @@ if ( get_config( "daemon" ) ) {
 sub process_full_log {
     my ( $logfile ) = @_;
 
-    open(my $fh, "<", $logfile)
-        or die "Couldn't open $logfile for reading: $!\n";
+    for my $logfile ( get_logfiles() ) {
 
-    my $start = new Benchmark;
+        # log file handle
+        my $fh;
 
-  LINE:
-    while ( my $line = <$fh> ) {
-        chomp $line;
-        $data = $log->parse_line( $line, $data );
-        $maxlines--;
-        last LINE unless $maxlines;
+        my $command;
+        if ( $logfile =~ m|^(.*?)\:(.*)$| ) {
+            my ( $server, $logfile ) = ( $1, $2 );
+
+            if ( $logfile =~ m|\.gz$| ) {
+                $command = "ssh $server gzcat $logfile";
+            }
+            else {
+                $command = "ssh $server cat $logfile";
+            }
+        }
+        else {
+            if ( $logfile =~ m|\.gz$| ) {
+                $command = "gzcat $logfile";
+            }
+            else {
+                $command = "cat $logfile";
+            }
+        }
+        $logger->info( $command );
+        open $fh, "$command 2>&1 |" or die "Unable to execute $command: $!";
+
+        my $start = new Benchmark;
+
+      LINE:
+        while ( my $line = <$fh> ) {
+            chomp $line;
+            $data = $log->parse_line( $line, $data );
+
+            #print $line;
+
+            $maxlines--;
+            last LINE unless $maxlines;
+        }
+        my $end = new Benchmark;
+
+        close $fh or die "Error closing file: $!\n";
+
+        my $diff = timediff($end, $start);
+        my $text = "Time taken was " . timestr($diff, 'all') . " seconds";
+        ###l4p $logger->info( $text );
     }
-    my $end = new Benchmark;
-
-    close $fh or die "Error closing file: $!\n";
-
-    my $diff = timediff($end, $start);
-    my $text = "Time taken was " . timestr($diff, 'all') . " seconds";
-    ###l4p $logger->info( $text );
 }
 
 #
@@ -652,6 +684,54 @@ sub get_config {
     return;
 }
 
+sub get_logfiles {
+    my @logfiles;
+
+    if ( @opt_logfiles ) {
+        @logfiles = @opt_logfiles;
+    }
+    elsif ( $opt_section && $ini{$opt_section}{'logfiles'} ) {
+        ###l4p $logger->info( "got fields from ini file section: $opt_section" );
+        @logfiles = @{ $ini{$opt_section}{'logfiles'} };
+    }
+
+    unless ( scalar @logfiles ) {
+        return;
+    }
+
+    if ( get_servers() ) {
+        my @server_logfiles;
+        for my $server ( get_servers() ) {
+            for my $logfile ( @logfiles ) {
+                push @server_logfiles, "$server:$logfile";
+            }
+        }
+        @logfiles = @server_logfiles;
+    }
+
+    return @logfiles;
+}
+
+sub get_servers {
+    my @servers;
+
+    if ( @opt_servers ) {
+        for my $serverlist ( @opt_servers ) {
+            @servers = ( @servers, split /[\:\,\s]+/, $serverlist );
+        }
+    }
+    elsif ( $opt_section && $ini{$opt_section}{'servers'} ) {
+        ###l4p $logger->info( "got fields from ini file section: $opt_section" );
+        @servers = @{ $ini{$opt_section}{'servers'} };
+    }
+
+    unless ( scalar @servers ) {
+        return;
+    }
+
+    return @servers;
+}
+
 # todo - genericize get_fields and get_groups to use get_config
 sub get_fields {
     my @fields;
@@ -992,10 +1072,10 @@ entry, and make them available as column number 0, 1, and 2.
 
 Experimental.  Specify the remote server on which the log file lives.
 
-When using this option, you should install logtail on the target
-server, and specify the location using the logtail config param.
-Using the ssh option without the logtail option may be unstable and is
-not recommended.
+When using this option, you should install Craig H. Rowland's program
+'logtail' on the target server, and specify the location using the
+logtail config param.  Using the ssh option without the logtail option
+may be unstable and is not recommended.
 
 Note that the "-all" flag is not yet supported when using ssh.
 
@@ -1179,9 +1259,9 @@ met:
   notice, this list of conditions and the following disclaimer in the
   documentation and/or other materials provided with the distribution.
 
-- Neither the name of the geekfarm.org nor the names of its
-  contributors may be used to endorse or promote products derived from
-  this software without specific prior written permission.
+- Neither the name of geekfarm.org nor the names of its contributors
+  may be used to endorse or promote products derived from this
+  software without specific prior written permission.
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
 "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT

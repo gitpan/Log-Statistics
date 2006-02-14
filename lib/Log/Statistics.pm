@@ -2,8 +2,8 @@ package Log::Statistics;
 use warnings;
 use strict;
 
-# $Id: Statistics.pm 32 2006-01-30 22:12:30Z wu $
-our $VERSION = sprintf "0.%03d", q$Revision: 32 $ =~ /(\d+)/g;
+# $Id: Statistics.pm 36 2006-02-14 08:19:28Z wu $
+our $VERSION = sprintf "0.%03d", q$Revision: 36 $ =~ /(\d+)/g;
 
 #
 #_* Libraries
@@ -180,7 +180,7 @@ sub parse_line {
     }
     return unless scalar @values;
 
-    my $duration = $self->{'field_index'}->{'duration'} ? $values[ $self->{'field_index'}->{'duration'} ] : undef;
+    my $duration = defined $self->{'field_index'}->{'duration'} ? $values[ $self->{'field_index'}->{'duration'} ] : undef;
 
     # for each line, total counters are incremented
     $self->{'data'}->{'total'}->{'duration'} += $duration if $duration;
@@ -206,7 +206,7 @@ sub parse_line {
         # increment counters for this name/value pair
         $self->{'data'}->{'fields'}->{ $name }->{ $value }->{'count'}++;
 
-        if ( $duration ) {
+        if ( defined $duration ) {
 
             $self->{'data'}->{'fields'}->{ $name }->{ $value }->{'duration'} += $duration;
 
@@ -252,7 +252,7 @@ sub parse_line {
 
             $group_pointer->{'count'} += 1;
 
-            if ( $duration ) {
+            if ( defined $duration ) {
                 $group_pointer->{'duration'} += $duration;
 
               THRESHOLD:
@@ -519,9 +519,9 @@ met:
   notice, this list of conditions and the following disclaimer in the
   documentation and/or other materials provided with the distribution.
 
-- Neither the name of the geekfarm.org nor the names of its
-  contributors may be used to endorse or promote products derived from
-  this software without specific prior written permission.
+- Neither the name of geekfarm.org nor the names of its contributors
+  may be used to endorse or promote products derived from this
+  software without specific prior written permission.
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
 "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
@@ -534,6 +534,9 @@ DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
 THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
+
 
 
 
