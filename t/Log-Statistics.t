@@ -1,7 +1,7 @@
 #!/usr/bin/perl -w
 use strict;
 
-# $Id: Log-Statistics.t 18 2006-01-29 18:47:15Z wu $
+# $Id: Log-Statistics.t 39 2006-02-23 22:00:02Z wu $
 
 #
 #_* Libraries
@@ -246,9 +246,9 @@ EOL
                         'SUCCESS' => {
                             'count' => 7,
                             'duration' => 728,
-                            'th_0' => 3,
+                            'th_0' => 2,
                             'th_1' => 3,
-                            'th_2' => 1
+                            'th_2' => 2
                         }
                     },
                     'transaction' => {

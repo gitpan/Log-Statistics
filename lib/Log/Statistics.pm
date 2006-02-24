@@ -2,8 +2,8 @@ package Log::Statistics;
 use warnings;
 use strict;
 
-# $Id: Statistics.pm 36 2006-02-14 08:19:28Z wu $
-our $VERSION = sprintf "0.%03d", q$Revision: 36 $ =~ /(\d+)/g;
+# $Id: Statistics.pm 40 2006-02-23 22:04:00Z wu $
+our $VERSION = sprintf "0.%03d", q$Revision: 40 $ =~ /(\d+)/g;
 
 #
 #_* Libraries
@@ -213,7 +213,7 @@ sub parse_line {
           THRESHOLD:
             for my $threshold_idx ( reverse( 0 .. $#{ (@{$self->{'thresholds'}})[$index] } ) ) {
                 my $threshold = $self->{'thresholds'}->[$index]->[$threshold_idx];
-                if ( $duration > $threshold ) {
+                if ( $duration >= $threshold ) {
                     #print "dur:$duration th:$threshold\n";
                     $self->{'data'}->{'fields'}->{ $self->{'field_name'}->[$index] }->
                         { $values[ $self->{'field_column'}->[$index] ] }->{"th_$threshold_idx"}++;
@@ -258,7 +258,7 @@ sub parse_line {
               THRESHOLD:
                 for my $threshold_idx ( reverse( 0 .. $#{ $self->{'group'}->{'thresholds'}->[$index] } ) ) {
                     my $threshold = $self->{'group'}->{'thresholds'}->[$index]->[$threshold_idx];
-                    if ( $duration > $threshold ) {
+                    if ( $duration >= $threshold ) {
                         $group_pointer->{"th_$threshold_idx"}++;
                         last THRESHOLD;
                     }
@@ -486,7 +486,7 @@ Date::Manip - for converting log times to unix time.
 
 =head1 SEE ALSO
 
-http://www.geekfarm.org/twiki/bin/view/Main/LogStatistics
+http://www.geekfarm.org/wu/muse/LogStatistics.html
 
 
 =head1 BUGS AND LIMITATIONS
@@ -534,24 +534,6 @@ DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
 THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

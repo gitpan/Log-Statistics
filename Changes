@@ -1,3 +1,13 @@
+0.40 2006-02-23 16:00:02 -0600 (Thu, 23 Feb 2006)
+    - fixed bug where duration is 0
+        - previously threshold must be exceeded, now thresholds are inclusive, example:
+            - thresholds are 1, 2, and 3
+            - response time is exactly 2
+            - category is now "2-3 seconds"
+        - fixed broken test case to fit new logic
+    - die when section not in config file if both config file and section defined
+    - update doc urls to point to new location on geekfarm
+
 0.36 2006-02-14 00:21:31 -0600 (Tue, 14 Feb 2006)
     - prototyping offline reporting across multiple servers
 

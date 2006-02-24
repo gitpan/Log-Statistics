@@ -7,8 +7,8 @@ use strict;
 # See POD docs below.
 #
 
-# $Id: logstatsd 36 2006-02-14 08:19:28Z wu $
-our $VERSION = sprintf "0.%03d", q$Revision: 36 $ =~ /(\d+)/g;
+# $Id: logstatsd 40 2006-02-23 22:04:00Z wu $
+our $VERSION = sprintf "0.%03d", q$Revision: 40 $ =~ /(\d+)/g;
 
 #
 #_* Libraries
@@ -108,6 +108,10 @@ $SIG{__DIE__} = sub {
 my %ini;
 if ( $opt_configfile ) {
     tie %ini, 'Config::IniFiles', ( -file => $opt_configfile );
+}
+
+if ( $opt_configfile && $opt_section && ! $ini{$opt_section} ) {
+    die "Error: section specified ($opt_section) not found in config ($opt_configfile)";
 }
 
 # defaults
@@ -860,6 +864,12 @@ __END__
   logstatsd -f status:0 -f duration:5 -l /path/to/logfile --xml
   logstatsd -f status:0 -f duration:5 -l /path/to/logfile --xml /path/to/report.xml
 
+  # help message describing options
+  logstatsd --help
+
+  # full man page on logstatsd
+  logstatsd --help -v
+
   # for more examples and explanations, see the EXAMPLES section below.
 
 =head1 DESCRIPTION
@@ -1228,7 +1238,7 @@ Pod::Usage - for command line help
 
 =head1 SEE ALSO
 
-http://www.geekfarm.org/twiki/bin/view/Main/LogStatistics
+http://www.geekfarm.org/wu/muse/LogStatistics.html
 
 
 =head1 BUGS AND LIMITATIONS
