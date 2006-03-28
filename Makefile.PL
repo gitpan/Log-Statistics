@@ -7,6 +7,7 @@ WriteMakefile(
     EXE_FILES         => [ qw[ scripts/logstatsd ] ],
     PREREQ_PM         => {
         "YAML" => 0,
+        "XML::Writer" => 0,
         "Date::Manip" => 0,
         "Log::Log4perl" => 0.51,
     },

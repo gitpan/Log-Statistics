@@ -1,7 +1,7 @@
 #!/usr/bin/perl -w
 use strict;
 
-# $Id: Log-Statistics.t 39 2006-02-23 22:00:02Z wu $
+# $Id: Log-Statistics.t 41 2006-02-25 10:20:42Z wu $
 
 #
 #_* Libraries
@@ -101,6 +101,15 @@ for my $index ( 0 .. 9 ) {
         "$index: Reading data in from data file and comparing to original data"
     ) or die;
     unlink $tmpfile;
+
+    if ( $data->{'xml'} ) {
+        is(
+            $log->get_xml(),
+            $data->{'xml'},
+            "$index: generating xml report"
+        );
+
+    }
 }
 
 
@@ -172,6 +181,20 @@ EOL
                     'duration' => 945
                 }
             },
+            'xml' =><<EOXML,
+<?xml version="1.0" standalone="yes"?>
+
+<log-statistics>
+  <fields name="status">
+    <status name="FAILURE" count="2" duration="217" duration_average="108.5000" />
+    <status name="SUCCESS" count="7" duration="728" duration_average="104.0000" />
+  </fields>
+  <fields name="transaction">
+    <transaction name="mytrans1.do" count="5" duration="525" duration_average="105.0000" />
+    <transaction name="mytrans2.do" count="4" duration="420" duration_average="105.0000" />
+  </fields>
+</log-statistics>
+EOXML
         },
         {
             "description" => "two fields with duration and group",
@@ -230,6 +253,30 @@ EOL
                     'duration' => 945
                 }
             },
+            'xml' =><<EOXML,
+<?xml version="1.0" standalone="yes"?>
+
+<log-statistics>
+  <fields name="status">
+    <status name="FAILURE" count="2" duration="217" duration_average="108.5000" />
+    <status name="SUCCESS" count="7" duration="728" duration_average="104.0000" />
+  </fields>
+  <fields name="transaction">
+    <transaction name="mytrans1.do" count="5" duration="525" duration_average="105.0000" />
+    <transaction name="mytrans2.do" count="4" duration="420" duration_average="105.0000" />
+  </fields>
+  <groups name="status-transaction">
+    <status name="FAILURE">
+      <transaction name="mytrans1.do" count="1" duration="109" duration_average="109.0000" />
+      <transaction name="mytrans2.do" count="1" duration="108" duration_average="108.0000" />
+    </status>
+    <status name="SUCCESS">
+      <transaction name="mytrans1.do" count="4" duration="416" duration_average="104.0000" />
+      <transaction name="mytrans2.do" count="3" duration="312" duration_average="104.0000" />
+    </status>
+  </groups>
+</log-statistics>
+EOXML
         },
         {
             'description' => "one field with thresholds and one field without",
@@ -267,6 +314,20 @@ EOL
                     'duration' => 945
                 }
             },
+            'xml' =><<EOXML,
+<?xml version="1.0" standalone="yes"?>
+
+<log-statistics>
+  <fields name="status">
+    <status name="FAILURE" count="2" duration="217" duration_average="108.5000" th_2="2" />
+    <status name="SUCCESS" count="7" duration="728" duration_average="104.0000" th_0="2" th_1="3" th_2="2" />
+  </fields>
+  <fields name="transaction">
+    <transaction name="mytrans1.do" count="5" duration="525" duration_average="105.0000" />
+    <transaction name="mytrans2.do" count="4" duration="420" duration_average="105.0000" />
+  </fields>
+</log-statistics>
+EOXML
         },
         {
             'description' => "basic simple test case plus time field",
@@ -294,7 +355,18 @@ EOL
                     'count' => 9,
                     'duration' => 945
                 }
-            }
+            },
+            'xml' =><<EOXML,
+<?xml version="1.0" standalone="yes"?>
+
+<log-statistics>
+  <fields name="time">
+    <time name="00:06:22" count="1" duration="101" duration_average="101.0000" />
+    <time name="00:06:23" count="3" duration="309" duration_average="103.0000" />
+    <time name="00:06:24" count="5" duration="535" duration_average="107.0000" />
+  </fields>
+</log-statistics>
+EOXML
         },
         {
             'description' => "two fields plus time field and time field group",
@@ -357,9 +429,33 @@ EOL
                         }
                     },
                 },
-            }
-        },
+            },
+            'xml' =><<EOXML,
+<?xml version="1.0" standalone="yes"?>
 
+<log-statistics>
+  <fields name="status">
+    <status name="FAILURE" count="2" duration="217" duration_average="108.5000" />
+    <status name="SUCCESS" count="7" duration="728" duration_average="104.0000" />
+  </fields>
+  <fields name="time">
+    <time name="00:06:22" count="1" duration="101" duration_average="101.0000" />
+    <time name="00:06:23" count="3" duration="309" duration_average="103.0000" />
+    <time name="00:06:24" count="5" duration="535" duration_average="107.0000" />
+  </fields>
+  <groups name="status-time">
+    <status name="FAILURE">
+      <time name="00:06:24" count="2" duration="217" duration_average="108.5000" />
+    </status>
+    <status name="SUCCESS">
+      <time name="00:06:22" count="1" duration="101" duration_average="101.0000" />
+      <time name="00:06:23" count="3" duration="309" duration_average="103.0000" />
+      <time name="00:06:24" count="3" duration="318" duration_average="106.0000" />
+    </status>
+  </groups>
+</log-statistics>
+EOXML
+        },
         {
             "description" => "two grouped fields with duration and time",
             'fields' => [ qw( 2:duration 0:status 1:transaction 3:time ) ],
@@ -454,6 +550,45 @@ EOL
                     'duration' => 945
                 }
             },
+            'xml' =><<EOXML,
+<?xml version="1.0" standalone="yes"?>
+
+<log-statistics>
+  <fields name="status">
+    <status name="FAILURE" count="2" duration="217" duration_average="108.5000" />
+    <status name="SUCCESS" count="7" duration="728" duration_average="104.0000" />
+  </fields>
+  <fields name="time">
+    <time name="00:06:22" count="1" duration="101" duration_average="101.0000" />
+    <time name="00:06:23" count="3" duration="309" duration_average="103.0000" />
+    <time name="00:06:24" count="5" duration="535" duration_average="107.0000" />
+  </fields>
+  <fields name="transaction">
+    <transaction name="mytrans1.do" count="5" duration="525" duration_average="105.0000" />
+    <transaction name="mytrans2.do" count="4" duration="420" duration_average="105.0000" />
+  </fields>
+  <groups name="status-time">
+    <status name="FAILURE">
+      <time name="00:06:24" count="2" duration="217" duration_average="108.5000" />
+    </status>
+    <status name="SUCCESS">
+      <time name="00:06:22" count="1" duration="101" duration_average="101.0000" />
+      <time name="00:06:23" count="3" duration="309" duration_average="103.0000" />
+      <time name="00:06:24" count="3" duration="318" duration_average="106.0000" />
+    </status>
+  </groups>
+  <groups name="status-transaction">
+    <status name="FAILURE">
+      <transaction name="mytrans1.do" count="1" duration="109" duration_average="109.0000" />
+      <transaction name="mytrans2.do" count="1" duration="108" duration_average="108.0000" />
+    </status>
+    <status name="SUCCESS">
+      <transaction name="mytrans1.do" count="4" duration="416" duration_average="104.0000" />
+      <transaction name="mytrans2.do" count="3" duration="312" duration_average="104.0000" />
+    </status>
+  </groups>
+</log-statistics>
+EOXML
         },
         {
             'description' => "basic simple test case, two fields, no duration",

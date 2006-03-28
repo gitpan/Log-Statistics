@@ -2,16 +2,18 @@ package Log::Statistics;
 use warnings;
 use strict;
 
-# $Id: Statistics.pm 40 2006-02-23 22:04:00Z wu $
-our $VERSION = sprintf "0.%03d", q$Revision: 40 $ =~ /(\d+)/g;
+# $Id: Statistics.pm 45 2006-03-28 07:58:26Z wu $
+our $VERSION = sprintf "0.%03d", q$Revision: 45 $ =~ /(\d+)/g;
 
 #
 #_* Libraries
 #
-use YAML;
 use Data::Dumper;
 use IO::File;
 use Date::Manip;
+
+use YAML;
+use XML::Writer;
 
 # logging
 use Log::Log4perl qw(:resurrect :easy);
@@ -34,8 +36,13 @@ sub register_field {
     my ( $self, $name, $column ) = @_;
 
     unless ( defined( $name ) && defined( $column ) ) {
-        ###l4p $logger->logconfess( "not enough arguments" );
-        die "not enough arguments";
+        ###l4p $logger->logconfess( "attempted to register field without specifying name or column" );
+        die "attempted to register field without specifying name or column";
+    }
+
+    if ( $name =~ m|\-| ) {
+        ###l4p $logger->logconfess( "column name may not contain a dash" );
+        die "column name may not contain a dash";
     }
 
     # provide an easy way to look up a column by field name
@@ -290,13 +297,125 @@ sub get_utime_from_string
 
 }
 
+#
+#__* XML in/out
+#
 
+sub get_xml {
+    my ( $self ) = @_;
+
+    #print Dumper $self->{'data'};
+
+    my $xml = "";
+    my $writer = new XML::Writer( OUTPUT => \$xml, DATA_MODE => 1, DATA_INDENT => 2 );
+    $writer->xmlDecl( "", 1 );
+    $writer->startTag( "log-statistics" );
+
+    for my $field ( sort keys %{ $self->{'data'}->{'fields'} } ) {
+        $writer->startTag( "fields", "name" => $field );
+        $self->_xmlify_fields( $self->{'data'}->{'fields'}->{ $field }, $writer, [ $field ] );
+        $writer->endTag( "fields" );
+    }
+
+    for my $field ( sort keys %{ $self->{'data'}->{'groups'} } ) {
+        $writer->startTag( "groups", "name" => $field );
+        my @names = split /\-/, $field;
+        $self->_xmlify_groups( $self->{'data'}->{'groups'}->{ $field }, $writer, [ $field ], \@names );
+        $writer->endTag( "groups" );
+    }
+
+    $writer->endTag( "log-statistics" );
+    $writer->end();
+
+    return $xml;
+}
+
+sub _xmlify_fields {
+    my ( $self, $data, $writer, $fields_a ) = @_;
+
+    unless ( ref $data eq "HASH" ) {
+        die "Error, xmlify_fields called on non-hash";
+    }
+
+    if ( $data->{'count'} ) {
+        # leaf
+        my $name = $fields_a->[-1];
+        my $level = $fields_a->[-2];
+        my $count = $data->{'count'};
+        pop @$fields_a;
+
+        my @data = ( 'name' => $name, 'count' => $count );
+        @data = $self->_xmlify_duration( $data, @data );
+        $writer->emptyTag( $level, @data );
+    }
+    else {
+        for my $field ( sort keys %{ $data } ) {
+            push @{$fields_a}, $field;
+            $self->_xmlify_fields( $data->{ $field }, $writer, $fields_a );
+        }
+    }
+
+}
+
+sub _xmlify_groups {
+    my ( $self, $data, $writer, $fields_a, $names_a, $depth ) = @_;
+    $depth = defined $depth ? $depth + 1 : 0;
+
+    unless ( ref $data eq "HASH" ) {
+        die "Error, xmlify_fields called on non-hash";
+    }
+
+    my $name = $names_a->[$depth];
+    for my $field ( sort keys %{ $data } ) {
+        push @{$fields_a}, $field;
+
+        if ( $data->{ $field }->{ 'count' } ) {
+            # leaf
+            my $field_name = $fields_a->[-1];
+            my $field_id = $fields_a->[-2];
+            my $count = $data->{ $field }->{'count'};
+            pop @$fields_a;
+
+            my @data = ( 'name' => $field_name, 'count' => $count );
+            @data = $self->_xmlify_duration( $data->{ $field }, @data );
+            $writer->emptyTag( $name, @data );
+
+        }
+        else {
+            $writer->startTag( $name, "name" => $field );
+            $self->_xmlify_groups( $data->{ $field }, $writer, $fields_a, $names_a, $depth );
+            $writer->endTag( $name );
+        }
+    }
+}
+
+
+sub _xmlify_duration {
+    my ( $self, $data, @data ) = @_;
+
+    if ( $data->{'duration'} ) {
+        push @data, 'duration';
+        push @data, $data->{'duration'};
+        push @data, 'duration_average';
+        push @data, sprintf( "%0.4f", $data->{'duration'} / $data->{'count'}  );
+        for my $index ( 0 .. 5 ) {
+            if ( $data->{ "th_$index" } ) {
+                push @data, "th_$index";
+                push @data, $data->{ "th_$index" };
+            }
+        }
+    }
+
+    return @data;
+}
 
 1;
 
 __END__
 
-
+#
+#_* POD
+#
 
 =head1 NAME
 
@@ -431,7 +550,8 @@ second.
 =item $log->add_line_regexp( $regexp )
 
 Define a regular expression which can be used to parse the entire log
-entry and divide it up into a series of fields.
+entry and divide it up into a series of fields.  This only needs to be
+defined if the entries are not single-line comma delimited.
 
 =item $log->parse_text( $text )
 
@@ -460,7 +580,46 @@ Given a plain text date string from a log, convert it to unix time.  A
 cache is built up in RAM of the previously seen time strings to reduce
 the overhead of using Date::Manip.
 
+=item $log->get_xml
+
+Get XML report for log entries that have been processed.
+
 =back
+
+=head1 Example XML Output
+
+Here are some examples of the XML generated by Log::Statistics:
+
+    # time field and duration field defined
+
+    <?xml version="1.0" standalone="yes"?>
+    <log-statistics>
+      <fields name="time">
+        <time name="2006/01/05 00:01" count="7" duration="1039" />
+        <time name="2006/01/05 00:02" count="1" duration="129" />
+        <time name="2006/01/05 00:03" count="7" duration="991" />
+        <time name="2006/01/05 00:04" count="11" duration="1457" />
+        <time name="2006/01/05 00:05" count="9" duration="2507" />
+        <time name="2006/01/05 00:06" count="7" duration="1059" />
+        <time name="2006/01/05 00:07" count="7" duration="1100" />
+      </fields>
+    </log-statistics>
+
+    # group of status:transaction
+
+    <?xml version="1.0" standalone="yes"?>
+    <log-statistics>
+      <xrefs name="status-transaction">
+        <status name="BAD">
+          <transaction name="mytrans1" count="3" duration="9589" />
+        </status>
+        <status name="GOOD">
+          <transaction name="mytrans1" count="200" duration="880" />
+          <transaction name="mytrans2" count="122" duration="187" />
+        </status>
+      </xrefs>
+    </log-statistics>
+
 
 =head1 THRESHOLDS
 
@@ -491,8 +650,10 @@ http://www.geekfarm.org/wu/muse/LogStatistics.html
 
 =head1 BUGS AND LIMITATIONS
 
-There are no known bugs in this module. Please report problems to
-VVu@geekfarm.org
+Specifying a duplicate field or group definition will cause all values
+for the duplicated group(s) to be counted twice.
+
+Please report problems to VVu@geekfarm.org
 
 Patches are welcome.
 
@@ -534,6 +695,10 @@ DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
 THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
+
+
 
 
 

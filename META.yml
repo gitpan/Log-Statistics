@@ -1,12 +1,13 @@
 # http://module-build.sourceforge.net/META-spec.html
 #XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
 name:         Log-Statistics
-version:      0.040
+version:      0.045
 version_from: lib/Log/Statistics.pm
 installdirs:  site
 requires:
     Date::Manip:                   0
     Log::Log4perl:                 0.51
+    XML::Writer:                   0
     YAML:                          0
 
 distribution_type: module

@@ -1,3 +1,27 @@
+0.44 2006-03-27 20:40:02 -0600 (Mon, 27 Mar 2006) | 2 lines
+    - eliminate log4j resurrect from logstatsd
+    - warn if report mode and no logfiles specified
+    - added some extra debugging
+    - docs for ssh-prefilter option
+
+0.42 2006-02-25 04:29:36 -0600 (Sat, 25 Feb 2006)
+
+    - added "-all" flag for backward compatibility
+    - tweaked docs a bit
+    - piloting an ssh pre-filter to run on target server
+    - allow specifying an alternate ssh command, e.g. fsh
+
+0.41 2006-02-23 16:04:00 -0600 (Thu, 23 Feb 2006)
+    - migrate xml export from logstatsd to Log::Statistics
+    - use XML::Writer instead of hacking workarounds for XML::Simple issues
+    - test cases for xml exports
+    - error handling to prevent fields from being defined with dashes
+    - recursive group handling for xml export
+        - should handle any number of groups - previously limited to 3
+    - renamed "-all" flag to "-report" - much less confusing
+        - updated examples and wording of explanations
+    - documented --servers flag
+
 0.40 2006-02-23 16:00:02 -0600 (Thu, 23 Feb 2006)
     - fixed bug where duration is 0
         - previously threshold must be exceeded, now thresholds are inclusive, example:

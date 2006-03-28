@@ -7,8 +7,8 @@ use strict;
 # See POD docs below.
 #
 
-# $Id: logstatsd 40 2006-02-23 22:04:00Z wu $
-our $VERSION = sprintf "0.%03d", q$Revision: 40 $ =~ /(\d+)/g;
+# $Id: logstatsd 44 2006-03-28 04:27:22Z wu $
+our $VERSION = sprintf "0.%03d", q$Revision: 44 $ =~ /(\d+)/g;
 
 #
 #_* Libraries
@@ -18,8 +18,7 @@ use Data::Dumper;
 use Benchmark;
 use File::Tail;
 use Config::IniFiles;
-require XML::Simple;
-use Log::Log4perl qw(:resurrect :easy);
+use Log::Log4perl qw(:easy);
 
 use Log::Statistics;
 
@@ -47,10 +46,11 @@ BEGIN {
           '-s|section:s'       => \$opt_section,
           '-d|daemon'          => \$opt{'daemon'},
           '-dump'              => \$opt{'dump'},
-          '-a|all'             => \$opt{'full'},
+          '-r|report'          => \$opt{'report'},
+          '-a|all'             => \$opt{'report'},
           '-rrd:s'             => \$opt{'rrd'},
           '-rrdupdate:s'       => \@opt_rrdupdate,
-          '-r|read:s'          => \$opt{'read'},
+          '-read:s'            => \$opt{'read'},
           '-servers:s'         => \@opt_servers,
           '-t|time-regexp:s'   => \$opt{'time_regexp'},
           '-line-regexp:s'     => \$opt{'line_regexp'},
@@ -63,6 +63,8 @@ BEGIN {
           '-u|update:i'        => \$opt{'update'},
           '-debug:i'	       => \$opt_debug,
           '-ssh:s'             => \$opt{'ssh'},
+          '-ssh-command:s'     => \$opt{'ssh_command'},
+          '-ssh-prefilter:s'   => \$opt{'ssh_pre_filter'},
           '-v|verbose!'	       => \$opt_verbose,
           '-version'           => \$opt{'version'},
           '-help|?'		       => \$opt_help,
@@ -83,6 +85,17 @@ if ( $opt{'version'} ) {
     exit;
 }
 
+unless ( $opt{'report'} || $opt{'daemon'} ) {
+    warn "\nERROR: neither --daemon nor --report specified\n";
+    warn "\tUse --report to process the entire log report\n";
+    warn "\tUse --daemon to process new log entries as they enter the file\n";
+    warn "\tUse --help to see full usage documentation\n\n";
+    die;
+}
+
+# set up ssh command if specified
+my $ssh = get_config('ssh_command') ? get_config('ssh_command') : "ssh";
+
 #
 #_* Logging
 #
@@ -97,7 +110,7 @@ $SIG{__DIE__} = sub {
   $logger->fatal(@_);
 };
 
-###l4p $logger->info( "Logging Started" );
+$logger->info( "Logging Started" );
 
 
 
@@ -112,6 +125,10 @@ if ( $opt_configfile ) {
 
 if ( $opt_configfile && $opt_section && ! $ini{$opt_section} ) {
     die "Error: section specified ($opt_section) not found in config ($opt_configfile)";
+}
+
+if ( $opt_configfile && ! $opt_section && ! $ini{'default'} ) {
+    die "Error: section not specified, and no 'default' section found in config ($opt_configfile)";
 }
 
 # defaults
@@ -144,38 +161,36 @@ if ( $opt_section && $ini{$opt_section}{'field_list'} ) {
 }
 
 for my $field_def ( get_fields() ) {
-    ###l4p $logger->info( "got field def: $field_def" );
+    $logger->info( "got field def: $field_def" );
     my ( $name, $column, $thresholds ) = split /:/, $field_def;
     $log->add_field( $column, $name, $thresholds );
 }
 
 for my $group_def ( get_groups() ) {
-    ###l4p $logger->info( "got field def: $group_def" );
+    $logger->info( "got field def: $group_def" );
     my ( $name_list, @thresholds ) = split /\|/, $group_def;
     my ( @names ) = split /:/, $name_list;
     $log->add_group( [ @names ], join "|", @thresholds );
 }
 
 if ( get_config( "time_regexp" ) ) {
-    ###l4p $logger->info( "Adding time regexp: " . get_config( "time_regexp" ) );
+    $logger->info( "Adding time regexp: " . get_config( "time_regexp" ) );
     $log->add_time_regexp( get_config( "time_regexp" ) );
 }
 
 my $data;
 
-# read data from the cache file
-#if ( $opt{'read'} ) {
-#    $log->read_data( $opt{'read'} );
-#}
-
 # parse the entire file
-if ( get_config( "full" ) ) {
+if ( get_config( "report" ) ) {
+    $logger->info( "generating report" );
     process_full_log( );
+    $logger->debug( "generating output" );
     dump_data();
 }
 
 # go into tail mode to process live incoming log file data
 if ( get_config( "daemon" ) ) {
+    $logger->info( "daemonizing" );
     daemonize( get_logfiles() );
 }
 
@@ -190,7 +205,12 @@ if ( get_config( "daemon" ) ) {
 sub process_full_log {
     my ( $logfile ) = @_;
 
+    unless ( get_logfiles() ) {
+        $logger->logconfess( "Error: no logfiles specified?" );
+    }
+
     for my $logfile ( get_logfiles() ) {
+        $logger->info( "processing logfile: $logfile" );
 
         # log file handle
         my $fh;
@@ -199,11 +219,17 @@ sub process_full_log {
         if ( $logfile =~ m|^(.*?)\:(.*)$| ) {
             my ( $server, $logfile ) = ( $1, $2 );
 
-            if ( $logfile =~ m|\.gz$| ) {
-                $command = "ssh $server gzcat $logfile";
+            if ( get_config( 'ssh_pre_filter' ) ) {
+                my $remote_command = get_config( 'ssh_pre_filter' );
+                $remote_command =~ s|\$logfile|$logfile|g;
+                $logger->info( "ssh_pre_filter: $remote_command" );
+                $command = "$ssh $server $remote_command";
+            }
+            elsif ( $logfile =~ m|\.gz$| ) {
+                $command = "$ssh $server gzcat $logfile";
             }
             else {
-                $command = "ssh $server cat $logfile";
+                $command = "$ssh $server cat $logfile";
             }
         }
         else {
@@ -235,7 +261,7 @@ sub process_full_log {
 
         my $diff = timediff($end, $start);
         my $text = "Time taken was " . timestr($diff, 'all') . " seconds";
-        ###l4p $logger->info( $text );
+        $logger->info( $text );
     }
 }
 
@@ -246,7 +272,7 @@ sub process_full_log {
 sub daemonize {
     my ( $logfile ) = @_;
 
-    ###l4p $logger->info( "Starting in daemon mode: $$" );
+    $logger->info( "Starting in daemon mode: $$" );
     $daemon_mode = 1;
 
     # set up signal handler to dump data on kill -USR1
@@ -289,7 +315,7 @@ sub tail_file_tail {
     my $file=File::Tail->new( name => $logfile, maxinterval => 30 );
 
     while (defined(my $line=$file->read)) {
-        ###l4p $logger->debug( "TAIL: $line" );
+        $logger->debug( "TAIL: $line" );
         $log->parse_line( $line );
     }
 }
@@ -299,11 +325,11 @@ sub tail_ssh_logtail {
 
     my $sleep = get_config( "sleep" );
     my $logtail_offset = get_config( "logtail_offset" ) || "";
-    my $command = "ssh $server 'while $logtail $logfile $logtail_offset; do sleep $sleep; done'";
+    my $command = "$ssh $server 'while $logtail $logfile $logtail_offset; do sleep $sleep; done'";
 
     while ( 1 ) {
-        ###l4p $logger->info( "Opening $logfile on $server:");
-        ###l4p $logger->info( $command );
+        $logger->info( "Opening $logfile on $server:");
+        $logger->info( $command );
         open RUN, "$command 2>&1 |" or die "Unable to execute $command: $!";
         while ( my $line = <RUN> ) {
                 $log->parse_line( $line );
@@ -325,10 +351,10 @@ sub tail_ssh_logtail {
 sub tail_ssh {
     my ( $logfile, $server ) = @_;
 
-    my $command = "ssh $server tail -n 0 -f $logfile";
+    my $command = "$ssh $server tail -n 0 -f $logfile";
 
-    ###l4p $logger->info( "Opening $logfile on $server:");
-    ###l4p $logger->info( $command );
+    $logger->info( "Opening $logfile on $server:");
+    $logger->info( $command );
     open RUN, "$command 2>&1 |" or die "Unable to execute $command: $!";
     while ( my $line = <RUN> )
     {
@@ -351,22 +377,17 @@ sub tail_ssh {
 #
 
 sub dump_data {
-    my ( $data ) = @_;
-    unless ( $data && ref $data eq "HASH" ) {
-        $data = $log->{'data'};
-    }
-
     if ( get_config( "rrd" ) ) {
-        export_rrd( $log->{'data'} );
+        export_rrd( );
     }
 
     if ( get_config( "dump" ) ) {
-        print Dumper $data;
+        print Dumper $log->{'data'};
         return;
     }
 
     if ( get_config( "xml" ) ) {
-        export_xml( $data );
+        export_xml( );
     }
 }
 
@@ -375,9 +396,8 @@ sub dump_data {
 #
 
 sub export_xml {
-    my ( $data ) = @_;
-
-    my $xml = get_xml_from_data( $data );
+    #my $xml = get_xml_from_data( $data );
+    my $xml = $log->get_xml();
 
     my $xml_file = get_config( "xml" );
 
@@ -390,80 +410,13 @@ sub export_xml {
         # make writing xml into an atomic operation
         system( "mv", "$xml_file.bak", $xml_file );
 
-        ###l4p $logger->info( "Wrote data to $xml_file" );
+        $logger->info( "Wrote data to $xml_file" );
     }
     else {
         print $xml;
     }
 }
 
-sub get_xml_from_data {
-    my ( $data ) = @_;
-
-    # XML::Simple doesn't create valid XML if any of your keys are not
-    # legal XML element names, which is almost never the case.  So we
-    # need to re-structure our data so that every other level of the
-    # deep data structure is a legal XML element name.  Every other
-    # level will get stuck in a name="" attribute.  Also, just a
-    # warning, don't expect XML::Simple to read XML data generated by
-    # XML::Simple and build a data structure that resembles the
-    # original data structure in any way.
-
-    ###l4p $logger->debug( "reformatting data so XML::Simple will create valid XML" );
-    my $xml_data;
-    for my $field ( keys %{ $data->{'fields'} } ) {
-        $xml_data->{'fields'}->{$field}->{$field} = $data->{'fields'}->{$field};
-    }
-    for my $group ( keys %{ $data->{'groups'} } ) {
-        #print Dumper $data->{'groups'}->{$group};
-        #$xml_data->{'groups'}->{$group} = $data->{'groups'}->{$group};
-        my @names = split /\-/, $group;
-
-        if ( scalar @names == 2 ) {
-            for my $field1 ( keys %{ $data->{'groups'}->{$group} } ) {
-                for my $field2 ( keys %{ $data->{'groups'}->{$group}->{$field1} } ) {
-                    $xml_data->{'groups'}->{$group}->{$names[0]}->{$field1}->{$names[1]}->{$field2} =
-                        $data->{'groups'}->{$group}->{$field1}->{$field2};
-                }
-            }
-        }
-        elsif ( scalar @names == 3 ) {
-            for my $field1 ( keys %{ $data->{'groups'}->{$group} } ) {
-                for my $field2 ( keys %{ $data->{'groups'}->{$group}->{$field1} } ) {
-                    for my $field3 ( keys %{ $data->{'groups'}->{$group}->{$field1}->{$field2} } ) {
-                        $xml_data->{'groups'}->{$group}->{$names[0]}->{$field1}->{$names[1]}->{$field2}->{$names[2]}->{$field3} =
-                            $data->{'groups'}->{$group}->{$field1}->{$field2}->{$field3};
-                    }
-                }
-            }
-        }
-    }
-
-    # calculate averages based on duration / count
-    xml_calculate_averages( $xml_data );
-
-    ###l4p $logger->debug( "Preparing XML::Simple for work" );
-    my $xs = new XML::Simple();
-    my $xml = $xs->XMLout( $xml_data, XMLDecl => 1, RootName => "log-statistics" );
-
-    return $xml;
-
-}
-
-sub xml_calculate_averages {
-    my ( $data ) = @_;
-
-    if ( ref $data eq "HASH" ) {
-        if ( $data->{'duration'} ) {
-            $data->{'duration_average'} = sprintf( "%2.4f", $data->{'duration'} / $data->{'count'} );
-        }
-        else {
-            for my $key ( keys %{ $data } ) {
-                xml_calculate_averages( $data->{$key} );
-            }
-        }
-    }
-}
 
 #
 #___* RRD
@@ -484,7 +437,7 @@ sub get_current_rrd {
 
     my $rrd_cmd = "rrdtool update $rrdfile.rrd $info";
 
-    ###l4p $logger->info( "current_rrd built: $rrd_cmd" );
+    $logger->info( "current_rrd built: $rrd_cmd" );
     return $rrd_cmd;
 }
 
@@ -512,15 +465,15 @@ sub rrd_create {
 }
 
 sub export_rrd {
-    my ( $data ) = @_;
+    my $data = $log->{'data'};
 
-    ###l4p $logger->info( "exporting RRD data" );
+    $logger->info( "exporting RRD data" );
 
     my $filename = get_config( 'rrd' );
 
     if ( $daemon_mode ) {
         if ( $filename ne "-" ) {
-            ###l4p $logger->info( "appending rrd data to $filename" );
+            $logger->info( "appending rrd data to $filename" );
             open ( OUT, ">>$filename" ) or die "Unable to open $filename: $!";
         }
 
@@ -549,7 +502,7 @@ sub export_rrd {
     }
     else {
         if ( $filename ne "-" ) {
-            ###l4p $logger->info( "re-creating rrd data file: $filename" );
+            $logger->info( "re-creating rrd data file: $filename" );
             open ( OUT, ">$filename" ) or die "Unable to open $filename: $!";
         }
 
@@ -671,7 +624,7 @@ sub get_config {
     my ( $param ) = @_;
 
     unless ( $param ) {
-        ###l4p $logger->logconfess( "no param specified" );
+        $logger->logconfess( "no param specified" );
         die "Error: get_config called but no param specified";
     }
 
@@ -695,7 +648,7 @@ sub get_logfiles {
         @logfiles = @opt_logfiles;
     }
     elsif ( $opt_section && $ini{$opt_section}{'logfiles'} ) {
-        ###l4p $logger->info( "got fields from ini file section: $opt_section" );
+        $logger->info( "got fields from ini file section: $opt_section" );
         @logfiles = @{ $ini{$opt_section}{'logfiles'} };
     }
 
@@ -725,7 +678,7 @@ sub get_servers {
         }
     }
     elsif ( $opt_section && $ini{$opt_section}{'servers'} ) {
-        ###l4p $logger->info( "got fields from ini file section: $opt_section" );
+        $logger->info( "got fields from ini file section: $opt_section" );
         @servers = @{ $ini{$opt_section}{'servers'} };
     }
 
@@ -741,15 +694,15 @@ sub get_fields {
     my @fields;
 
     if ( @opt_fields ) {
-        ###l4p $logger->info( "got fields from commmand line" );
+        $logger->info( "got fields from commmand line" );
         @fields = @opt_fields;
     }
     elsif ( $opt_section && $ini{$opt_section}{'fields'} ) {
-        ###l4p $logger->info( "got fields from ini file section: $opt_section" );
+        $logger->info( "got fields from ini file section: $opt_section" );
         @fields = @{ $ini{$opt_section}{'fields'} };
     }
     elsif ( $ini{'default'}{'fields'} ) {
-        ###l4p $logger->info( "got fields from ini file 'defaults' section" );
+        $logger->info( "got fields from ini file 'defaults' section" );
         @fields = @{ $ini{'default'}{'fields'} };
     }
 
@@ -763,7 +716,7 @@ sub get_fields {
         my %field_info;
         for my $entry ( @{ $ini{$opt_section}{'field_list'} } ) {
             my ( $name, $column ) = split /:/, $entry;
-            ###l4p $logger->debug( "indexing field $name => $column" );
+            $logger->debug( "indexing field $name => $column" );
             $field_info{ $name } = $column;
         }
         my @return_fields;
@@ -773,7 +726,7 @@ sub get_fields {
                 $column = $field_info{ $name };
             }
             unless ( defined $column ) {
-                ###l4p $logger->logconfess( "no column defined for $field" );
+                $logger->logconfess( "no column defined for $field" );
                 die "no column defined for $field";
             }
 
@@ -792,15 +745,15 @@ sub get_fields {
 
 sub get_groups {
     if ( @opt_groups ) {
-        ###l4p $logger->info( "got groups from commmand line" );
+        $logger->info( "got groups from commmand line" );
         return @opt_groups;
     }
     elsif ( $opt_section && $ini{$opt_section}{'groups'} ) {
-        ###l4p $logger->info( "got groups from ini file section: $opt_section" );
+        $logger->info( "got groups from ini file section: $opt_section" );
         return @{ $ini{$opt_section}{'groups'} };
     }
     elsif ( $ini{'default'}{'groups'} ) {
-        ###l4p $logger->info( "got groups from ini file default section" );
+        $logger->info( "got groups from ini file default section" );
         return @{ $ini{'default'}{'groups'} };
     }
 
@@ -809,36 +762,19 @@ sub get_groups {
 
 sub get_rrdupdate {
     if ( @opt_rrdupdate ) {
-        ###l4p $logger->info( "got rrdupdate from commmand line" );
+        $logger->info( "got rrdupdate from commmand line" );
         return @opt_rrdupdate;
     }
     elsif ( $opt_section && $ini{$opt_section}{'rrdupdate'} ) {
-        ###l4p $logger->info( "got rrdupdate from ini file section: $opt_section" );
+        $logger->info( "got rrdupdate from ini file section: $opt_section" );
         return @{ $ini{$opt_section}{'rrdupdate'} };
     }
     elsif ( $ini{'default'}{'rrdupdate'} ) {
-        ###l4p $logger->info( "got rrdupdate from ini file default section" );
+        $logger->info( "got rrdupdate from ini file default section" );
         return @{ $ini{'default'}{'rrdupdate'} };
     }
 
     return;
-}
-
-#
-#__* unused
-#
-
-sub read_data {
-    my ( $file ) = @_;
-
-    ###l4p $logger->info( "Reading xml data from $file" );
-
-    my $xs = new XML::Simple();
-
-    open(my $fh, "<", $file)
-        or die "Couldn't open $file for reading: $!\n";
-    $data = $xs->XMLin( $fh );
-    close $fh or die "Error closing file: $!\n";
 }
 
 #
@@ -990,11 +926,12 @@ to specify the column number:
 
 Specify section to be read from config file.
 
-=item -a, --all
+=item -r, --report
 
-On start, parse the entire log file.
+Read the entire log.  Useful for generating offline reports.
 
-May be combined with -d.
+When combined with -d, read in all data currently in the log before
+going into tail mode.
 
 =item -d, --daemon
 
@@ -1003,7 +940,7 @@ tail mode (using File::Tail).  Each new line that arrives in the log
 file will be processed.  Data may be obtained from the running daemon
 by sending a USR1 signal (kill -USR1 <pid>).
 
-May be combined with -a.
+May be combined with -r.
 
 =item --xml [file]
 
@@ -1024,7 +961,7 @@ time stamp and currently available summary data.
 To specify which counters should be used to build rrd files, use the
 -rrdupdate option.
 
-If the -rrd option is combined with -a, and if a "time" field and a
+If the -rrd option is used with --report, and if a "time" field and a
 time-regexp were both defined, then times will be parsed from the
 logs, and "rrd update" commands will be generated for each minute.
 Currently this behaviour is only available for the total summary data
@@ -1080,18 +1017,39 @@ entry, and make them available as column number 0, 1, and 2.
 
 =item --ssh [servername]
 
-Experimental.  Specify the remote server on which the log file lives.
+Experimental.  May only be used with --daemon.  Specify the remote
+server on which the log file lives.
 
 When using this option, you should install Craig H. Rowland's program
 'logtail' on the target server, and specify the location using the
 logtail config param.  Using the ssh option without the logtail option
 may be unstable and is not recommended.
 
-Note that the "-all" flag is not yet supported when using ssh.
+=item --servers [servername1][,[servername2],...]
+
+May only be used in combination with --report.  Specify a series of
+servers on which the log file resides.  For each server, files will be
+read using ssh and cat (or gzcat if file ends in .gz).  The log path
+must be identical on each server, although globs are allowed in the
+log path.
+
+=item --ssh-prefilter [command]
+
+May only be used with --servers.  Specify a command that should be run
+on each target server to extract the appropriate records from the log.
+The string '$logfile' will be replaced with the actual logfile name.
+Example usage:
+
+  --ssh-prefilter='gzgrep -h myTransactionName $logfile'
+
+This can dramatically reduce cpu and bandwidth utilization.
+
+Despite the similar name, this is not to be combined with the --ssh
+option.
 
 =item --logtail [/path/to/logtail]
 
-Experimental.  Can only be used with ssh.  Specify the path to the
+Experimental.  Can only be used with -ssh.  Specify the path to the
 logtail program written in C by Craig H. Rowland.  From the logtail
 documentation:
 
@@ -1186,23 +1144,25 @@ descriptions must also include details of any configuration language used.
 
 =head1 EXAMPLES
 
-  # parse entire CSV file, column 1 contains status, and column 6
-  # contains duration.  generate an xml report of number of responses
-  # and average response time data for each status.
-  logstatsd -a -f status:0 -f duration:5 -l /path/to/logfile --xml -
+  # generate an xml report from a CSV file, column 1 contains status,
+  # and column 6 contains duration.  generate an xml report of number
+  # of responses and average response time data for each status.
+  logstatsd -r -f status:0 -f duration:5 -l /path/to/logfile --xml -
 
-  # parse entire CSV file, column 1 contains status, and column 6
-  # contains duration.  generate an xml report of number of responses
-  # and average response time data for each status, including the
-  # number of responses that were under 5 seconds, those that were
-  # between 5-10 seconds, 10-20 seconds, and over 20 seconds.
-  logstatsd -a -f status:0:5|10|20 -f duration:5 -l /path/to/logfile --xml -
+  # generate an xml report from a CSV file, column 1 contains status,
+  # and column 6 contains duration.  generate an xml report of number
+  # of responses and average response time data for each status,
+  # including the number of responses that were under 5 seconds, those
+  # that were between 5-10 seconds, 10-20 seconds, and over 20
+  # seconds.
+  logstatsd -r -f status:0:5|10|20 -f duration:5 -l /path/to/logfile --xml -
 
-  # parse entire CSV file.  Column 1 contains status, column 3 contains
-  # transaction name, and column 6 contains duration.  generate an xml
-  # report of responses for each status, for each transaction, and also
-  # break down response data for each transaction based on status.
-  logstatsd -a -f transaction:3 -f status:0 -f duration:5 --group status:transaction -l /path/to/logfile --xml -
+  # generate an xml report from a CSV file.  Column 1 contains status,
+  # column 3 contains transaction name, and column 6 contains
+  # duration.  generate an xml report of responses for each status,
+  # for each transaction, and also break down response data for each
+  # transaction based on status.
+  logstatsd -r -f transaction:3 -f status:0 -f duration:5 --group status:transaction -l /path/to/logfile --xml -
 
   # monitor CSV file for new incoming hits.  generate an xml report on
   # "kill -USR1 <logstats pid>"
@@ -1213,9 +1173,9 @@ descriptions must also include details of any configuration language used.
   logstatsd -d -f status:0 -f duration:5 -l /path/to/logfile --rrd /path/to/rrd_script.sh
 
   # parse entire CSV file, and then begin monitoring for incoming
-  # hits.  update xml report on completion of full parsing, and then
-  # on receipt of "kill -USR1 <logstats pid>"
-  logstatsd -f status:0 -f duration:5 -l /path/to/logfile --xml /path/to/report.xml
+  # hits.  generate xml report on completion of full parsing, and then
+  # update on each receipt of "kill -USR1 <logstats pid>"
+  logstatsd -r -d -f status:0 -f duration:5 -l /path/to/logfile --xml /path/to/report.xml
 
 
 =head1 DEPENDENCIES
@@ -1224,11 +1184,9 @@ Benchmark - generating stats about long parsing times
 
 File::Tail - for monitoring incoming data in a log
 
-XML::Simple - for exporting data to xml
-
 Config::IniFiles - for parsing the logstatsd.conf config file
 
-Log::Log4perl - can be disabled by simply commenting out the use line.
+Log::Log4perl - logging
 
 Log::Statistics - logstatsd comes bundled with Log::Statistics, available from CPAN
 
