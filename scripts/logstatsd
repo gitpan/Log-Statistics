@@ -7,8 +7,8 @@ use strict;
 # See POD docs below.
 #
 
-# $Id: logstatsd 44 2006-03-28 04:27:22Z wu $
-our $VERSION = sprintf "0.%03d", q$Revision: 44 $ =~ /(\d+)/g;
+# $Id: logstatsd 47 2006-04-11 23:34:19Z wu $
+our $VERSION = sprintf "0.%03d", q$Revision: 47 $ =~ /(\d+)/g;
 
 #
 #_* Libraries
@@ -257,7 +257,14 @@ sub process_full_log {
         }
         my $end = new Benchmark;
 
-        close $fh or die "Error closing file: $!\n";
+        close $fh;
+
+        # check exit status
+        unless ( $? eq 0 ) {
+            my $status = $? >> 8;
+            my $signal = $? & 127;
+            $logger->warn( "Error returned from command:\n\tcommand=$command\n\tstatus=$status\n\tsignal=$signal" );
+        }
 
         my $diff = timediff($end, $start);
         my $text = "Time taken was " . timestr($diff, 'all') . " seconds";
@@ -857,7 +864,7 @@ predicatble contents like an apache error log.
 
 =head2 OPTIONS
 
-The following options are supported by this command
+The following options are supported by this command:
 
 =over 4
 
@@ -898,6 +905,31 @@ field which has the least number of possible values first.
 Log::Statistics will handle groups with any number of members, but at
 this point logstatsd will only handle groups with two or three fields.
 
+=item -t, --time-regexp <regexp>
+
+Specify the regexp used to parse the time field, if specified.  The
+regexp should include a single capture expression, which when run on
+the dat field, will return the date and time.
+
+Ideally you should attempt to capture the year, month, day, hour, and
+minute.  Do not capture seconds unless you really want summary data
+broken down per second.
+
+=item --line-regexp <regexp>
+
+Specify regexp used to parse the entire log entry.  The regexp should
+capture each field in the log, which can then be referenced using the
+usual column number.  For a simple silly example,
+
+  --line-regexp "^(.*?),(.*?),(.*?)"
+
+This would capture the first three comma-separated fields from the log
+entry, and make them available as column number 0, 1, and 2.
+
+=item --version
+
+Display version information.
+
 =item -c, --conf=CONFIGFILE
 
 Specify location of config file.  A config file is a convenient way to
@@ -926,21 +958,6 @@ to specify the column number:
 
 Specify section to be read from config file.
 
-=item -r, --report
-
-Read the entire log.  Useful for generating offline reports.
-
-When combined with -d, read in all data currently in the log before
-going into tail mode.
-
-=item -d, --daemon
-
-Enable daemon mode.  In daemon mode, the log file will be opened in
-tail mode (using File::Tail).  Each new line that arrives in the log
-file will be processed.  Data may be obtained from the running daemon
-by sending a USR1 signal (kill -USR1 <pid>).
-
-May be combined with -r.
 
 =item --xml [file]
 
@@ -949,11 +966,11 @@ If "-" is specified, the xml will be printed to stdout.
 
 =item --rrd [file]
 
-Generate a shell script of "rrdtool update" commands to update a set
-of rrd files.  RRD files are not generated directly at this time,
-since the script is much more efficient for transport to a centralized
-monitoring server and updating rrd files there.  If "-" is specified,
-the rrd commands will be printed to stdout.
+Experimental.  Generate a shell script of "rrdtool update" commands to
+update a set of rrd files.  RRD files are not generated directly at
+this time, since the script is much more efficient for transport to a
+centralized monitoring server and updating rrd files there.  If "-" is
+specified, the rrd commands will be printed to stdout.
 
 Once in daemon mode, RRD commands will be generated using the current
 time stamp and currently available summary data.
@@ -972,58 +989,18 @@ thresholds.  If you define less thresholds, your RRDs will be a little
 larger than necessary.  If you define more, your RRDs will only track
 the first 4.
 
-=item --rrdupdate [field1|field2|field3][|field4]
+=back
 
-Specify the rrd databases that should be updated when running in
-daemon mode.  Any number of rrdupdate options may be specified.
+=head3 REPORT OPTIONS
 
-The fields in this option specify keys used to look up the option in
-the internal group data.  To look up a *field* directly, use the
-definition "fields|fieldname|fieldvalue".  For example, if you
-specified a field called "status", you can build an RRD from all
-entries with status "SUCCESS" by using this rrdupdate definition:
+The following options may be used for offline reports
 
-    fields|status|SUCCESS
+=over 4
 
-In order to track *group* fields (i.e. those specified with -group),
-use the definition "groups|name1-name2|value1|value2".  For example,
-if you are grouping status by transaction, to build RRDs for all
-transactions with status FAIL and name mytrans.do, use this:
+=item -r, --report
 
-    groups|status-transaction|FAIL|mytrans.do
-
-
-=item -t, --time-regexp <regexp>
-
-Specify the regexp used to parse the time field, if specified.  The
-regexp should include a single capture expression, which when run on
-the dat field, will return the date and time.
-
-Ideally you should attempt to capture the year, month, day, hour, and
-minute.  Do not capture seconds unless you really want summary data
-broken down per second.
-
-=item --line-regexp <regexp>
-
-Specify regexp used to parse the entire log entry.  The regexp should
-capture each field in the log, which can then be referenced using the
-usual column number.  For a simple silly example,
-
-  --line-regexp "^(.*?),(.*?),(.*?)"
-
-This would capture the first three comma-separated fields from the log
-entry, and make them available as column number 0, 1, and 2.
-
-
-=item --ssh [servername]
-
-Experimental.  May only be used with --daemon.  Specify the remote
-server on which the log file lives.
-
-When using this option, you should install Craig H. Rowland's program
-'logtail' on the target server, and specify the location using the
-logtail config param.  Using the ssh option without the logtail option
-may be unstable and is not recommended.
+Read the entire log and generate a single report.  Useful for generating
+offline reports.
 
 =item --servers [servername1][,[servername2],...]
 
@@ -1047,6 +1024,38 @@ This can dramatically reduce cpu and bandwidth utilization.
 Despite the similar name, this is not to be combined with the --ssh
 option.
 
+=back
+
+=head3 DAEMON OPTIONS
+
+The following options may be used for near-real-time reporting.
+
+=over 4
+
+=item -d, --daemon
+
+Enable daemon mode.  In daemon mode, the log file will be opened in
+tail mode (using File::Tail).  Each new line that arrives in the log
+file will be processed.  Data may be obtained from the running daemon
+by sending a USR1 signal (kill -USR1 <pid>).
+
+When combined with -r, the entire log file will be read before opening
+in tail mode.  As this is still a bit of a prototype, the log file is
+actually opened and read, then closed, and then opened again using
+File::Tail.  This leaves a short window where some log entries may not
+be processed.
+
+=item --ssh [servername]
+
+Experimental.  May only be used with --daemon.  Specify the remote
+server on which the log file lives.
+
+When using this option, you should install Craig H. Rowland's program
+'logtail' on the target server, and specify the location using the
+logtail config param.  Using the ssh option without the logtail option
+may be unstable and is not recommended.
+
+
 =item --logtail [/path/to/logtail]
 
 Experimental.  Can only be used with -ssh.  Specify the path to the
@@ -1069,9 +1078,25 @@ in your config file to specify the location of the offset file created
 by logtail.  If this option is not defined, logtail will create a
 number of offset files.
 
-=item --version
+=item --rrdupdate [field1|field2|field3][|field4]
 
-Display version information.
+Specify the rrd databases that should be updated when running in
+daemon mode.  Any number of rrdupdate options may be specified.
+
+The fields in this option specify keys used to look up the option in
+the internal group data.  To look up a *field* directly, use the
+definition "fields|fieldname|fieldvalue".  For example, if you
+specified a field called "status", you can build an RRD from all
+entries with status "SUCCESS" by using this rrdupdate definition:
+
+    fields|status|SUCCESS
+
+In order to track *group* fields (i.e. those specified with -group),
+use the definition "groups|name1-name2|value1|value2".  For example,
+if you are grouping status by transaction, to build RRDs for all
+transactions with status FAIL and name mytrans.do, use this:
+
+    groups|status-transaction|FAIL|mytrans.do
 
 =back
 

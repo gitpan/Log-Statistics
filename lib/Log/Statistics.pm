@@ -2,8 +2,8 @@ package Log::Statistics;
 use warnings;
 use strict;
 
-# $Id: Statistics.pm 45 2006-03-28 07:58:26Z wu $
-our $VERSION = sprintf "0.%03d", q$Revision: 45 $ =~ /(\d+)/g;
+# $Id: Statistics.pm 47 2006-04-11 23:34:19Z wu $
+our $VERSION = sprintf "0.%03d", q$Revision: 47 $ =~ /(\d+)/g;
 
 #
 #_* Libraries
@@ -695,6 +695,8 @@ DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
 THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
 
 
 
