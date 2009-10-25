@@ -1,14 +1,8 @@
 #!/usr/bin/perl -w
 use strict;
 
-#
-#_* WARNING: This is alpha quality code.
-#
-# See POD docs below.
-#
+our $VERSION = '0.050';
 
-# $Id: logstatsd 47 2006-04-11 23:34:19Z wu $
-our $VERSION = sprintf "0.%03d", q$Revision: 47 $ =~ /(\d+)/g;
 
 #
 #_* Libraries
@@ -61,13 +55,15 @@ BEGIN {
           '--sleep:i'          => \$opt{'sleep'},
           '--logtail:s'        => \$opt{'logtail'},
           '-u|update:i'        => \$opt{'update'},
-          '-debug:i'	       => \$opt_debug,
+          '-debug:i'           => \$opt_debug,
+          '-debugnull'         => \$opt{'debugnull'},
+          '-filter_regexp:s'   => \$opt{'filter_regexp'},
           '-ssh:s'             => \$opt{'ssh'},
           '-ssh-command:s'     => \$opt{'ssh_command'},
           '-ssh-prefilter:s'   => \$opt{'ssh_pre_filter'},
-          '-v|verbose!'	       => \$opt_verbose,
+          '-v|verbose!'        => \$opt_verbose,
           '-version'           => \$opt{'version'},
-          '-help|?'		       => \$opt_help,
+          '-help|?'            => \$opt_help,
       )
   ) { pod2usage( -exitval => 1, -verbose => 0 ) }
 
@@ -153,6 +149,12 @@ if ( get_config( "line_regexp" ) ) {
     $log->add_line_regexp( get_config( "line_regexp" ) );
 }
 
+if ( get_config( "filter_regexp" ) ) {
+    my $filter_regexp = get_config( "filter_regexp" );
+    $logger->info( "Adding filter regexp: $filter_regexp" );
+    $log->add_filter_regexp( get_config( "filter_regexp" ) );
+}
+
 if ( $opt_section && $ini{$opt_section}{'field_list'} ) {
     for my $entry ( @{ $ini{$opt_section}{'field_list'} } ) {
         my ( $name, $column ) = split /:/, $entry;
@@ -178,6 +180,12 @@ if ( get_config( "time_regexp" ) ) {
     $log->add_time_regexp( get_config( "time_regexp" ) );
 }
 
+# debug null values
+if ( get_config( "debugnull" ) ) {
+    $logger->debug( "Entries with null values with be printed to stderr" );
+    $log->set_debug_nullvalues();
+}
+
 my $data;
 
 # parse the entire file
@@ -193,6 +201,7 @@ if ( get_config( "daemon" ) ) {
     $logger->info( "daemonizing" );
     daemonize( get_logfiles() );
 }
+
 
 #
 #_* Subroutines
@@ -212,15 +221,16 @@ sub process_full_log {
     for my $logfile ( get_logfiles() ) {
         $logger->info( "processing logfile: $logfile" );
 
-        # log file handle
-        my $fh;
-
         my $command;
         if ( $logfile =~ m|^(.*?)\:(.*)$| ) {
             my ( $server, $logfile ) = ( $1, $2 );
 
+            # if a ssh_pre_filter is defined, that will be the
+            # command used to retrieve the file contents
             if ( get_config( 'ssh_pre_filter' ) ) {
                 my $remote_command = get_config( 'ssh_pre_filter' );
+                # search for "$logfile" in prefilter and replace with
+                # the actual logfile
                 $remote_command =~ s|\$logfile|$logfile|g;
                 $logger->info( "ssh_pre_filter: $remote_command" );
                 $command = "$ssh $server $remote_command";
@@ -241,7 +251,7 @@ sub process_full_log {
             }
         }
         $logger->info( $command );
-        open $fh, "$command 2>&1 |" or die "Unable to execute $command: $!";
+        open my $fh, "-|", "$command 2>&1" or die "Unable to execute $command: $!";
 
         my $start = new Benchmark;
 
@@ -337,11 +347,11 @@ sub tail_ssh_logtail {
     while ( 1 ) {
         $logger->info( "Opening $logfile on $server:");
         $logger->info( $command );
-        open RUN, "$command 2>&1 |" or die "Unable to execute $command: $!";
-        while ( my $line = <RUN> ) {
+        open my $fh, "-|", "$command 2>&1" or die "Unable to execute $command: $!";
+        while ( my $line = <$fh> ) {
                 $log->parse_line( $line );
             }
-        close RUN;
+        close $fh;
 
         # check exit status
         unless ( $? eq 0 ) {
@@ -354,20 +364,20 @@ sub tail_ssh_logtail {
     }
 }
 
-# not recommended at this time
+
 sub tail_ssh {
     my ( $logfile, $server ) = @_;
 
-    my $command = "$ssh $server tail -n 0 -f $logfile";
+    my $command = "$ssh $server tail -n +0 -F $logfile";
 
     $logger->info( "Opening $logfile on $server:");
     $logger->info( $command );
-    open RUN, "$command 2>&1 |" or die "Unable to execute $command: $!";
-    while ( my $line = <RUN> )
+    open my $fh, "-|", "$command 2>&1" or die "Unable to execute $command: $!";
+    while ( my $line = <$fh> )
     {
         $log->parse_line( $line );
     }
-    close RUN;
+    close $fh;
 
     # check exit status
     unless ( $? eq 0 ) {
@@ -409,10 +419,9 @@ sub export_xml {
     my $xml_file = get_config( "xml" );
 
     if ( $xml_file ne "-" ) {
-
-        open ( OUT, ">$xml_file.bak" ) or die "Unable to open $xml_file.bak: $!";
-        print OUT $xml;
-        close OUT;
+        open my $fh, ">", "$xml_file.bak" or die "Unable to open $xml_file.bak: $!";
+        print $fh $xml;
+        close $fh;
 
         # make writing xml into an atomic operation
         system( "mv", "$xml_file.bak", $xml_file );
@@ -449,7 +458,7 @@ sub get_current_rrd {
 }
 
 sub rrd_create {
-    my ( $filename, $start ) = @_;
+    my ( $filename, $start, $fh ) = @_;
 
     if ( get_config( "rrd_create" ) ) {
         my $step = get_config( 'rrd_step' );
@@ -466,7 +475,7 @@ sub rrd_create {
             print $rrd_create_command;
         }
         else {
-            print OUT $rrd_create_command;
+            print $fh $rrd_create_command;
         }
     }
 }
@@ -478,10 +487,13 @@ sub export_rrd {
 
     my $filename = get_config( 'rrd' );
 
+    # file handle
+    my $fh;
+
     if ( $daemon_mode ) {
         if ( $filename ne "-" ) {
             $logger->info( "appending rrd data to $filename" );
-            open ( OUT, ">>$filename" ) or die "Unable to open $filename: $!";
+            open $fh, ">>", $filename or die "Unable to open $filename: $!";
         }
 
         for my $update ( get_rrdupdate() ) {
@@ -502,7 +514,7 @@ sub export_rrd {
                 print "$rrd_cmd\n";
             }
             else {
-                print OUT "$rrd_cmd\n";
+                print $fh "$rrd_cmd\n";
             }
         }
 
@@ -510,7 +522,7 @@ sub export_rrd {
     else {
         if ( $filename ne "-" ) {
             $logger->info( "re-creating rrd data file: $filename" );
-            open ( OUT, ">$filename" ) or die "Unable to open $filename: $!";
+            open $fh, ">", $filename or die "Unable to open $filename: $!";
         }
 
         # you can only build rrds from historical data from fields
@@ -542,7 +554,7 @@ sub export_rrd {
             # subtract one second from the first time (db must start
             # at least on second before first entry)
             $rrd_start--;
-            rrd_create( "$name.rrd", $rrd_start );
+            rrd_create( "$name.rrd", $rrd_start, $fh );
 
             my ( $count, $duration, $th_0, $th_1, $th_2, $th_3 ) =
                 ( 0, 0, 0, 0, 0, 0 );
@@ -566,7 +578,7 @@ sub export_rrd {
                     print "$rrd_cmd\n";
                 }
                 else {
-                    print OUT "$rrd_cmd\n";
+                    print $fh "$rrd_cmd\n";
                 }
             }
         }
@@ -574,7 +586,7 @@ sub export_rrd {
     }
 
     if ( $filename ne "-" ) {
-        close OUT;
+        close $fh;
     }
 }
 
@@ -672,6 +684,15 @@ sub get_logfiles {
         }
         @logfiles = @server_logfiles;
     }
+    else {
+        # attempt globbing on filenames
+        my @unglobbed;
+        for my $logfile ( @logfiles ) {
+            push @unglobbed, glob( "$logfile" );
+        }
+        @logfiles = @unglobbed;
+
+    }
 
     return @logfiles;
 }
@@ -679,7 +700,7 @@ sub get_logfiles {
 sub get_servers {
     my @servers;
 
-    if ( @opt_servers ) {
+    if ( scalar @opt_servers ) {
         for my $serverlist ( @opt_servers ) {
             @servers = ( @servers, split /[\:\,\s]+/, $serverlist );
         }
@@ -800,6 +821,10 @@ __END__
   logstatsd - generate summary statistics from log files
 
 
+=head1 VERSION
+
+version 0.050
+
 =head1 SYNOPSIS
 
   logstatsd [OPTIONS]
@@ -822,27 +847,28 @@ file(s).  Log files may contain hundreds or thousands of events per
 minute.  Parsing the entire log file can be a very cpu intensive task
 making near-real-time reporting or monitoring difficult to impossible.
 
-logstatsd was designed to solve these problems and more while being
-extremely simple to use and configure.  logstatsd can monitor log
-files, parse entries as they enter the log, and store summary data.
-logstatsd can then be signaled to export current summary data for
-populating an RRD or feeding data to a monitoring application.
+logstatsd was designed to help with these problems while being
+extremely simple to use and configure.  logstatsd can run as a daemon,
+monitoring entries as they enter the log, and store summary data in
+memory.  logstatsd can then be signaled to export current summary data
+for populating an RRD or feeding data to a monitoring application.
 
-logstats parses log entries into fields and extracts fields that you
-find interesting, e.g. transaction name, status, duration, date/time,
-end user locations, back end server names, etc.  Summary data can be
-collected for each interesting field.  So for example, if a
-transaction field is specified, the number of hits for each unique
-transaction will be counted.  If a duration field is available in the
-log, then information about average response times of each transaction
-will also be recorded.
+By default, the log format is assumed to be comma separated values,
+but an alternate regexp may be specified.  Summary statistics
+(e.g. count) are collected about fields that you find interesting,
+e.g. by transaction name, status, duration, date/time, end user
+locations, back end server names, etc.  For example, if a transaction
+field is specified, the number of hits for each unique transaction
+will be counted.  If a duration field is defined, then information
+about average response times broken down by each field specified.
 
-Additionally, summary data may be collected for grouped fields.  For
-example, if you collect summary statistics about transaction name
-grouped with the status, you will see information about the numbers of
-success and failures of each transaction.  If you collect summary
-statistics about status grouped with time, you can then see statistics
-about the successful and unsuccessful transactions per minute.
+Summary data may also be cross tabulated on two or more fields,
+henceforth referred to as field groupings.  For example, if you
+collect summary statistics about transaction name grouped with the
+status, information will be collected about the numbers of success and
+failures of each transaction.  If you collect summary statistics about
+status grouped with time, you could then collect statistics about the
+successful and unsuccessful transactions per minute.
 
 Also, thresholds may be defined to categorize response times (see
 THRESHOLDS section below).
@@ -1102,14 +1128,15 @@ transactions with status FAIL and name mytrans.do, use this:
 
 =head1 THRESHOLDS
 
-Thresholds allow monitoring the number of long response times.  For
-example, a given transaction might be expected to be complete within 5
-seconds.  In addition to measuring the average response time of the
-transaction, you may also wish to measure how many transactions are
-not completed within 5 seconds.  You may define any number of
-thresholds, so you could measure those that you consider to be fast
-(under 3 seconds), good (under 5 seconds), slow (over 10 seconds), and
-very slow (over 20 seoncds).
+Thresholds allow you to create categories of long response times and
+report data on those categories.  For example, a given transaction
+might be expected to be complete within 5 seconds.  In addition to
+measuring the average response time of the transaction, you may also
+wish to measure how many transactions are not completed within 5
+seconds.  You may define any number of categories, so you could
+measure those that you consider to be fast (under 3 seconds), good
+(under 5 seconds), slow (over 10 seconds), and very slow (over 20
+seconds).
 
 NOTE: If a duration field was not defined, then response times
 thresholds statistics can not be calculated.
@@ -1267,6 +1294,3 @@ DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
 THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-
-

@@ -1,7 +1,7 @@
 #!/usr/bin/perl -w
 use strict;
 
-# $Id: Log-Statistics.t 41 2006-02-25 10:20:42Z wu $
+# $Id: Log-Statistics.t 48 2007-03-24 00:00:22Z root $
 
 #
 #_* Libraries
@@ -77,10 +77,10 @@ for my $index ( 0 .. 9 ) {
         "$index: Parsing log text"
     );
 
-#     print "\n\nEXPECTED\n";
-#     print Dumper $data->{'expected'};
-#     print "\n\nGOT\n";
-#     print Dumper $log->{'data'};
+    #print "\n\nEXPECTED\n";
+    #print Dumper $data->{'expected'};
+    #print "\n\nGOT\n";
+    #print Dumper $log->{'data'};
     is_deeply(
         $log->{'data'},
         $data->{'expected'},

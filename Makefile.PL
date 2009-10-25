@@ -1,17 +1,31 @@
+
+use strict;
+use warnings;
+
 use ExtUtils::MakeMaker;
-# See lib/ExtUtils/MakeMaker.pm for details of how to influence
-# the contents of the Makefile that is written.
+
 WriteMakefile(
-    NAME              => 'Log::Statistics',
-    VERSION_FROM      => 'lib/Log/Statistics.pm', # finds $VERSION
-    EXE_FILES         => [ qw[ scripts/logstatsd ] ],
-    PREREQ_PM         => {
-        "YAML" => 0,
-        "XML::Writer" => 0,
-        "Date::Manip" => 0,
-        "Log::Log4perl" => 0.51,
-    },
-    ($] >= 5.005 ?     ## Add these new keywords supported since 5.005
-      (ABSTRACT_FROM  => 'lib/Log/Statistics.pm', # retrieve abstract from module
-       AUTHOR         => 'VVu <VVu@geekfarm.org>') : ()),
+  DISTNAME  => 'Log-Statistics',
+  NAME      => 'Log::Statistics',
+  AUTHOR    => 'Alex\ White\ \<VVu\@geekfarm\.org\>',
+  ABSTRACT  => 'near\-real\-time\ statistics\ from\ log\ files',
+  VERSION   => '0.050',
+  EXE_FILES => [ qw() ],
+  (eval { ExtUtils::MakeMaker->VERSION(6.31) } ? (LICENSE => 'bsd') : ()),
+  PREREQ_PM    => {
+    "IO::File" => '0',
+    "YAML" => '0',
+    "Benchmark" => '0',
+    "Data::Dumper" => '0',
+    "Test::More" => '0',
+    "Config::IniFiles" => '0',
+    "Class::Std::Utils" => '0',
+    "XML::Writer" => '0',
+    "File::Tail" => '0',
+    "File::Temp" => '0',
+    "Date::Manip" => '0',
+    "Log::Log4perl" => '0',
+  },
+  test => {TESTS => 't/*.t'}
 );
+
