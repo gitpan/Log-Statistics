@@ -1,7 +1,7 @@
-#!/usr/bin/perl -w
+#!/usr/local/bin/perl -w
 use strict;
 
-our $VERSION = '0.050';
+our $VERSION = '0.051';
 
 
 #
@@ -823,7 +823,7 @@ __END__
 
 =head1 VERSION
 
-version 0.050
+version 0.051
 
 =head1 SYNOPSIS
 

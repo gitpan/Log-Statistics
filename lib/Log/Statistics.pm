@@ -2,7 +2,7 @@ package Log::Statistics;
 use warnings;
 use strict;
 
-our $VERSION = '0.050';
+our $VERSION = '0.051';
 
 
 #
@@ -459,7 +459,7 @@ Log::Statistics - near-real-time statistics from log files
 
 =head1 VERSION
 
-version 0.050
+version 0.051
 
 =head1 SYNOPSIS
 

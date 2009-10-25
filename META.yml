@@ -22,4 +22,4 @@ requires:
   Test::More: 0
   XML::Writer: 0
   YAML: 0
-version: 0.050
+version: 0.051

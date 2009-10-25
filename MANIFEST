@@ -4,12 +4,12 @@ MANIFEST
 META.yml
 Makefile.PL
 README
+bin/log_tail_mirror.pl
+bin/logstatsd
+bin/rrdgraph.sh
 dist.ini
+etc/logstatsd.conf
 lib/Log/Statistics.pm
-scripts/log_tail_mirror.pl
-scripts/logstatsd
-scripts/logstatsd.conf
-scripts/rrdgraph.sh
 t/00_load.t
 t/10_log_statistics.t
 t/critic.t
